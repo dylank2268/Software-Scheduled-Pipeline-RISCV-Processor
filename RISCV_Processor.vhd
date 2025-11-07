@@ -120,6 +120,57 @@ signal s_IF_ID_PC : std_logic_vector(31 downto 0);
 signal s_IF_ID_PCPlus4 : std_logic_vector(31 downto 0);
 signal s_IF_ID_Inst : std_logic_vector(31 downto 0);
 
+
+--Signals for ID/EX Pipeline propagation
+-- ID/EX Pipeline Register Signals (Data Path)
+signal s_ID_EX_PC       : std_logic_vector(31 downto 0);
+signal s_ID_EX_PCPlus4  : std_logic_vector(31 downto 0);
+signal s_ID_EX_RD1      : std_logic_vector(31 downto 0);  -- RS1 value
+signal s_ID_EX_RD2      : std_logic_vector(31 downto 0);  -- RS2 value
+signal s_ID_EX_IMM      : std_logic_vector(31 downto 0);  -- Immediate
+signal s_ID_EX_RS1      : std_logic_vector(4 downto 0);   -- RS1 address
+signal s_ID_EX_RS2      : std_logic_vector(4 downto 0);   -- RS2 address
+signal s_ID_EX_RD       : std_logic_vector(4 downto 0);   -- RD address
+-- ID/EX Pipeline Register Signals (Control Path)
+signal s_ID_EX_Funct3      : std_logic_vector(2 downto 0);
+signal s_ID_EX_ASel        : std_logic_vector(1 downto 0);
+signal s_ID_EX_Halt        : std_logic;
+signal s_ID_EX_LdUnsigned  : std_logic;
+signal s_ID_EX_LdHalf      : std_logic;
+signal s_ID_EX_LdByte      : std_logic;
+signal s_ID_EX_MemWrite    : std_logic;
+signal s_ID_EX_MemRead     : std_logic;
+signal s_ID_EX_WBSel       : std_logic_vector(1 downto 0);
+signal s_ID_EX_Branch      : std_logic;
+signal s_ID_EX_ImmKind     : std_logic_vector(2 downto 0);
+signal s_ID_EX_RegWr       : std_logic;
+signal s_ID_EX_ALUSrcSel   : std_logic;
+signal s_ID_EX_ALUCtrl     : std_logic_vector(3 downto 0);
+
+--EX/MEM pipeline register signals 
+signal s_EX_MEM_Halt        : std_logic;
+signal s_EX_MEM_PCPlus4     : std_logic_vector(31 downto 0);
+signal s_EX_MEM_ALURes      : std_logic_vector(31 downto 0);
+signal s_EX_MEM_WriteData   : std_logic_vector(31 downto 0);
+signal s_EX_MEM_RD          : std_logic_vector(4 downto 0);
+signal s_EX_MEM_RegWr       : std_logic;
+signal s_EX_MEM_MemRead     : std_logic;
+signal s_EX_MEM_MemWrite    : std_logic;
+signal s_EX_MEM_WBSel       : std_logic_vector(1 downto 0);
+signal s_EX_MEM_LdByte      : std_logic;
+signal s_EX_MEM_LdHalf      : std_logic;
+signal s_EX_MEM_LdUnsigned  : std_logic;
+
+
+--MEM/WB pipeline reg signals
+  signal s_PCPLUS4_W      :std_logic_vector(31 downto 0);
+  signal s_ALURes_W       :std_logic_vector(31 downto 0);
+  signal s_LoadData_W     :std_logic_vector(31 downto 0);
+  signal s_RD_W           :std_logic_vector(4 downto 0);
+  signal s_RegWr_W        :std_logic;
+  signal s_Halt_W         :std_logic;
+  signal s_WBSel_W        :std_logic_vector(1 downto 0);
+
 --Control unit instantiation
   component ControlUnit is
     port(
@@ -279,6 +330,121 @@ component IF_ID_Reg is
     o_Instruction: out std_logic_vector(31 downto 0)
   );
   end component;
+--ID_EX pipeline reg instantiation 
+component ID_EX_reg is
+  generic(
+    DATA_WIDTH : integer := 32
+  );
+  port(
+    CLK           : in  std_logic;
+    RST           : in  std_logic;
+    EN            : in  std_logic;
+    -- Data from D
+    PCD           : in  std_logic_vector(DATA_WIDTH-1 downto 0);
+    PCPLUS4D      : in  std_logic_vector(DATA_WIDTH-1 downto 0);
+    RD1D          : in  std_logic_vector(DATA_WIDTH-1 downto 0);
+    RD2D          : in  std_logic_vector(DATA_WIDTH-1 downto 0);
+    IMMD          : in  std_logic_vector(DATA_WIDTH-1 downto 0);
+    RS1D          : in  std_logic_vector(4 downto 0);
+    RS2D          : in  std_logic_vector(4 downto 0);
+    RDD           : in  std_logic_vector(4 downto 0);
+    Funct3_D      : in  std_logic_vector(2 downto 0);
+    ASel_D        : in  std_logic_vector(1 downto 0);
+    -- Control (D)
+    Halt_D        : in  std_logic;
+    LdUnsigned_D  : in  std_logic;
+    LdHalf_D      : in  std_logic;
+    LdByte_D      : in  std_logic;
+    MemWrite_D    : in  std_logic;
+    MemRead_D     : in  std_logic;
+    WBSel_D       : in  std_logic_vector(1 downto 0);
+    Branch_D      : in  std_logic;
+    ImmKind_D     : in  std_logic_vector(2 downto 0);
+    RegWr_D       : in  std_logic;
+    ALUSrcSel_D   : in  std_logic;
+    AluCtrl_D     : in  std_logic_vector(3 downto 0);
+    -- Data to E
+    PCE           : out std_logic_vector(DATA_WIDTH-1 downto 0);
+    PCPLUS4E      : out std_logic_vector(DATA_WIDTH-1 downto 0);
+    RD1E          : out std_logic_vector(DATA_WIDTH-1 downto 0);
+    RD2E          : out std_logic_vector(DATA_WIDTH-1 downto 0);
+    IMME          : out std_logic_vector(DATA_WIDTH-1 downto 0);
+    RS1E          : out std_logic_vector(4 downto 0);
+    RS2E          : out std_logic_vector(4 downto 0);
+    RDE           : out std_logic_vector(4 downto 0);
+    Funct3_E      : out std_logic_vector(2 downto 0);
+    ASel_E        : out std_logic_vector(1 downto 0);
+    -- Control to E
+    Halt_E        : out std_logic;
+    LdUnsigned_E  : out std_logic;
+    LdHalf_E      : out std_logic;
+    LdByte_E      : out std_logic;
+    MemWrite_E    : out std_logic;
+    MemRead_E     : out std_logic;
+    WBSel_E       : out std_logic_vector(1 downto 0);
+    Branch_E      : out std_logic;
+    ImmKind_E     : out std_logic_vector(2 downto 0);
+    RegWr_E       : out std_logic;
+    ALUSrcSel_E   : out std_logic;
+    AluCtrl_E     : out std_logic_vector(3 downto 0)
+  );
+end component;
+--EX/MEM pipeline reg instantiation
+component EX_MEM_Reg is
+    port(
+    i_CLK         : in  std_logic;
+    i_RST         : in  std_logic;
+    i_WE          : in  std_logic;
+    i_Halt        : in  std_logic;
+    i_PC_Plus4    : in  std_logic_vector(31 downto 0);
+    i_ALU_Result  : in  std_logic_vector(31 downto 0);
+    i_WriteData   : in  std_logic_vector(31 downto 0);
+    i_RD          : in  std_logic_vector(4 downto 0);
+    i_RegWrite    : in  std_logic;
+    i_MemRead     : in  std_logic;
+    i_MemWrite    : in  std_logic;
+    i_WBSel       : in  std_logic_vector(1 downto 0);
+    i_LdByte      : in  std_logic;
+    i_LdHalf      : in  std_logic;
+    i_LdUnsigned  : in  std_logic;
+    o_PC_Plus4    : out std_logic_vector(31 downto 0);
+    o_ALU_Result  : out std_logic_vector(31 downto 0);
+    o_WriteData   : out std_logic_vector(31 downto 0);
+    o_RD          : out std_logic_vector(4 downto 0);
+    o_RegWrite    : out std_logic;
+    o_MemRead     : out std_logic;
+    o_MemWrite    : out std_logic;
+    o_WBSel       : out std_logic_vector(1 downto 0);
+    o_LdByte      : out std_logic;
+    o_LdHalf      : out std_logic;
+    o_Halt        : out std_logic;
+    o_LdUnsigned  : out std_logic
+  );
+  end component;
+  --MEM/WB Pipeline reg instantiation
+component MEM_WB_Reg is
+  port(
+    i_CLK          : in  std_logic;
+    i_RST          : in  std_logic;
+    i_EN           : in  std_logic;  -- stall: '0' holds current W values
+    i_Halt         : in std_logic; 
+    -- Inputs from MEM stage (M)
+    PCPLUS4M       : in  std_logic_vector(31 downto 0);
+    ALUResM        : in  std_logic_vector(31 downto 0);
+    LoadDataM      : in  std_logic_vector(31 downto 0);
+    RDM            : in  std_logic_vector(4 downto 0);
+    RegWr_M        : in  std_logic;
+    WBSel_M        : in  std_logic_vector(1 downto 0);
+    -- Outputs to WB stage (W)
+    PCPLUS4W       : out std_logic_vector(31 downto 0);
+    ALUResW        : out std_logic_vector(31 downto 0);
+    LoadDataW      : out std_logic_vector(31 downto 0);
+    RDW            : out std_logic_vector(4 downto 0);
+    RegWr_W        : out std_logic;
+    o_Halt         : out std_logic;
+    WBSel_W        : out std_logic_vector(1 downto 0)
+  );
+end component;
 
 begin
 
@@ -423,6 +589,68 @@ begin
       RS2_OUT => s_rs2_val
     );
 
+ ID_EX_Pipe: ID_EX_Reg
+  port map( 
+    -- Clock and Control
+    CLK           => iCLK,
+    RST           => iRST,
+    EN            => '1',  -- Always enabled (no stalls in basic design)
+    
+    -- Data Path Inputs from ID Stage (D)
+    PCD           => s_IF_ID_PC,
+    PCPLUS4D      => s_IF_ID_PCPlus4,
+    RD1D          => s_rs1_val,      -- RS1 register value
+    RD2D          => s_rs2_val,      -- RS2 register value
+    IMMD          => s_immI,         -- Immediate value (use one immediate generator output)
+    RS1D          => s_rs1,          -- RS1 address
+    RS2D          => s_rs2,          -- RS2 address
+    RDD           => s_rd,           -- RD address
+    Funct3_D      => s_funct3,
+    ASel_D        => s_ASel,
+    
+    -- Control Signals from ID Stage (D)
+    Halt_D        => s_Halt,
+    LdUnsigned_D  => s_LdUnsigned,
+    LdHalf_D      => s_LdHalf,
+    LdByte_D      => s_LdByte,
+    MemWrite_D    => s_MemWrite,
+    MemRead_D     => s_MemRead,
+    WBSel_D       => s_WBSel,
+    Branch_D      => s_Branch,
+    ImmKind_D     => s_ImmKind,
+    RegWr_D       => s_RegWr,
+    ALUSrcSel_D   => s_ALUSrcSel,
+    AluCtrl_D     => s_ALUCtrl,
+    
+    -- Data Path Outputs to EX Stage (E)
+    PCE           => s_ID_EX_PC,
+    PCPLUS4E      => s_ID_EX_PCPlus4,
+    RD1E          => s_ID_EX_RD1,
+    RD2E          => s_ID_EX_RD2,
+    IMME          => s_ID_EX_IMM,
+    RS1E          => s_ID_EX_RS1,
+    RS2E          => s_ID_EX_RS2,
+    RDE           => s_ID_EX_RD,
+    Funct3_E      => s_ID_EX_Funct3,
+    ASel_E        => s_ID_EX_ASel,
+    
+    -- Control Outputs to EX Stage (E)
+    Halt_E        => s_ID_EX_Halt,
+    LdUnsigned_E  => s_ID_EX_LdUnsigned,
+    LdHalf_E      => s_ID_EX_LdHalf,
+    LdByte_E      => s_ID_EX_LdByte,
+    MemWrite_E    => s_ID_EX_MemWrite,
+    MemRead_E     => s_ID_EX_MemRead,
+    WBSel_E       => s_ID_EX_WBSel,
+    Branch_E      => s_ID_EX_Branch,
+    ImmKind_E     => s_ID_EX_ImmKind,
+    RegWr_E       => s_ID_EX_RegWr,
+    ALUSrcSel_E   => s_ID_EX_ALUSrcSel,
+    AluCtrl_E     => s_ID_EX_ALUCtrl
+  );
+
+
+
   -- EX STAGE: ALU INPUT SELECTION
   -- ALU Input A Mux (for AUIPC, LUI, normal ops)
   with s_ASel select
@@ -450,14 +678,13 @@ begin
       ALU_op    => s_ALUCtrl,
       F         => s_ALURes,
       Zero      => s_ALUZero,
-      Overflow  => s_ALUOvfl
+      Overflow  => s_Ovfl
     );
 
   -- Connect ALU output to required output port
   oALUOut <= s_ALURes;
-  
-  -- Connect overflow signal
   s_Ovfl <= s_ALUOvfl;
+ 
 
   -- EX STAGE: BRANCH LOGIC
   BRANCH_UNIT: branch_logic
@@ -468,6 +695,47 @@ begin
       i_branch   => s_Branch,
       o_br_taken => s_BranchTaken
     );
+
+EX_MEM_Pipe: EX_MEM_reg
+  port map(
+    -- Clock and Control
+    i_CLK         => iCLK,
+    i_RST         => iRST,
+    i_WE          => '1',  -- Always enabled (no stalls in basic design)
+
+    -- Data Path Inputs from EX Stage
+    i_Halt        => s_ID_EX_Halt,
+    i_PC_Plus4    => s_ID_EX_PCPlus4,
+    i_ALU_Result  => s_ALURes,
+    i_WriteData   => s_ID_EX_RD2,      -- RS2 value for store instructions
+    i_RD          => s_ID_EX_RD,
+
+    -- Control Signals from EX Stage
+    i_RegWrite    => s_ID_EX_RegWr,
+    i_MemRead     => s_ID_EX_MemRead,
+    i_MemWrite    => s_ID_EX_MemWrite,
+    i_WBSel       => s_ID_EX_WBSel,
+    i_LdByte      => s_ID_EX_LdByte,
+    i_LdHalf      => s_ID_EX_LdHalf,
+    i_LdUnsigned  => s_ID_EX_LdUnsigned,
+
+    -- Data Path Outputs to MEM Stage
+    o_Halt        => s_EX_MEM_Halt,
+    o_PC_Plus4    => s_EX_MEM_PCPlus4,
+    o_ALU_Result  => s_EX_MEM_ALURes,
+    o_WriteData   => s_EX_MEM_WriteData,
+    o_RD          => s_EX_MEM_RD,
+
+    -- Control Outputs to MEM Stage
+    o_RegWrite    => s_EX_MEM_RegWr,
+    o_MemRead     => s_EX_MEM_MemRead,
+    o_MemWrite    => s_EX_MEM_MemWrite,
+    o_WBSel       => s_EX_MEM_WBSel,
+    o_LdByte      => s_EX_MEM_LdByte,
+    o_LdHalf      => s_EX_MEM_LdHalf,
+    o_LdUnsigned  => s_EX_MEM_LdUnsigned
+  );
+
 
   -- MEM STAGE: LOAD/STORE UNIT
   LSU: load_store_unit
@@ -486,6 +754,28 @@ begin
       o_load_data   => s_LoadedData
     );
 
+
+  MEM_WB_Pipe: MEM_WB_Reg
+    port map(
+      i_CLK => iCLK,
+      i_RST => iRST,
+      i_EN => '1',
+      i_Halt => s_EX_MEM_Halt,
+      PCPLUS4M => s_EX_MEM_PCPlus4,
+      ALUResM => s_EX_MEM_ALURes,
+      LoadDataM => s_EX_MEM_WriteData,
+      RDM => s_EX_MEM_RD,
+      RegWr_M => s_EX_MEM_RegWr,
+      WBSel_M => s_EX_MEM_WBSel,
+      PCPlus4W => s_PCPLUS4_W,
+      ALUResW => s_ALURes_W,
+      LoadDataW => s_LoadData_W,
+      RDW => s_RD_W,
+      RegWr_W => s_RegWr_W,
+      o_Halt => s_Halt_W,
+      WBSel_W => s_WBSel_W
+    );
+  
   -- ============================================================
   -- WB STAGE: WRITEBACK MUX
   -- ============================================================
@@ -499,6 +789,8 @@ begin
       i_D3 => (others => '0'), -- 11: unused
       o_O  => s_RegWrData
     );
+
+
 
 
 end structure;
