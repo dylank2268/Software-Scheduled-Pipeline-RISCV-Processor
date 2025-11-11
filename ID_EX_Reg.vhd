@@ -22,6 +22,7 @@ entity ID_EX_reg is
     RS1D          : in  std_logic_vector(4 downto 0);
     RS2D          : in  std_logic_vector(4 downto 0);
     RDD           : in  std_logic_vector(4 downto 0);
+    INST_D      : in std_logic_vector(31 downto 0);
 
     -- NEW control (D)
     Funct3_D      : in  std_logic_vector(2 downto 0);  -- for branch compares
@@ -40,6 +41,7 @@ entity ID_EX_reg is
     RegWr_D       : in  std_logic;
     ALUSrcSel_D   : in  std_logic;
     AluCtrl_D     : in  std_logic_vector(3 downto 0);
+    PCSrc_D       : in pc_src_t;
 
     -- Data to E
     PCE           : out std_logic_vector(DATA_WIDTH-1 downto 0);
@@ -50,6 +52,7 @@ entity ID_EX_reg is
     RS1E          : out std_logic_vector(4 downto 0);
     RS2E          : out std_logic_vector(4 downto 0);
     RDE           : out std_logic_vector(4 downto 0);
+    PCSrc_E       : out pc_src_t;
 
     -- NEW control (E)
     Funct3_E      : out std_logic_vector(2 downto 0);
@@ -67,6 +70,8 @@ entity ID_EX_reg is
     ImmKind_E     : out std_logic_vector(2 downto 0);
     RegWr_E       : out std_logic;
     ALUSrcSel_E   : out std_logic;
+    EX_INST       : out std_logic_vector(31 downto 0);
+    INST_E        : out std_logic_vector(31 downto 0);
     AluCtrl_E     : out std_logic_vector(3 downto 0)
   );
 end entity;
@@ -116,6 +121,12 @@ begin
     generic map(N => 5)
     port map(Data_in => RDD, CLK => CLK, WE => EN, RST => RST, Data_out => RDE);
 
+  INST_reg : entity work.N_reg
+    generic map(N => 32)
+    port map(Data_in => INST_D, CLK => CLK, WE => EN, RST => RST, Data_out => INST_E);
+
+
+
   -- ============ NEW control pipes ============
   FUNCT3_reg : entity work.N_reg
     generic map(N => 3)
@@ -137,7 +148,6 @@ begin
       Data_out => ASel_E
     );
 
-  -- ============ existing control ============
   Halt_reg : entity work.N_reg
     generic map(N => 1)
     port map(Data_in => (0 => Halt_D), CLK => CLK, WE => EN, RST => RST, Data_out => HaltE_v);

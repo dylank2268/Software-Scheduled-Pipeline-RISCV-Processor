@@ -92,7 +92,6 @@ signal s_ALUZero : std_logic := '0'; --Zero flag signal
 
 --Writeback signals
 signal s_WBSel : std_logic_vector(1 downto 0) := "00";  -- 00=ALU, 01=Load, 10=PC+4, 11=unused
-signal s_WBData : std_logic_vector(31 downto 0);
 
 --Load/Store control signals
 signal s_MemRead : std_logic;
@@ -119,6 +118,7 @@ signal s_BranchTaken : std_logic; --From branch logic
 signal s_IF_ID_PC : std_logic_vector(31 downto 0);
 signal s_IF_ID_PCPlus4 : std_logic_vector(31 downto 0);
 signal s_IF_ID_Inst : std_logic_vector(31 downto 0);
+signal s_IF_ID_Halt : std_logic;
 
 
 --Signals for ID/EX Pipeline propagation
@@ -131,6 +131,7 @@ signal s_ID_EX_IMM      : std_logic_vector(31 downto 0);  -- Immediate
 signal s_ID_EX_RS1      : std_logic_vector(4 downto 0);   -- RS1 address
 signal s_ID_EX_RS2      : std_logic_vector(4 downto 0);   -- RS2 address
 signal s_ID_EX_RD       : std_logic_vector(4 downto 0);   -- RD address
+
 -- ID/EX Pipeline Register Signals (Control Path)
 signal s_ID_EX_Funct3      : std_logic_vector(2 downto 0);
 signal s_ID_EX_ASel        : std_logic_vector(1 downto 0);
@@ -146,6 +147,9 @@ signal s_ID_EX_ImmKind     : std_logic_vector(2 downto 0);
 signal s_ID_EX_RegWr       : std_logic;
 signal s_ID_EX_ALUSrcSel   : std_logic;
 signal s_ID_EX_ALUCtrl     : std_logic_vector(3 downto 0);
+signal s_ID_EX_INST        : std_logic_vector(31 downto 0);
+signal s_ID_EX_PCSrc       : pc_src_t;
+
 
 --EX/MEM pipeline register signals 
 signal s_EX_MEM_Halt        : std_logic;
@@ -335,10 +339,11 @@ component ID_EX_reg is
   generic(
     DATA_WIDTH : integer := 32
   );
-  port(
+   port(
     CLK           : in  std_logic;
     RST           : in  std_logic;
     EN            : in  std_logic;
+
     -- Data from D
     PCD           : in  std_logic_vector(DATA_WIDTH-1 downto 0);
     PCPLUS4D      : in  std_logic_vector(DATA_WIDTH-1 downto 0);
@@ -348,8 +353,12 @@ component ID_EX_reg is
     RS1D          : in  std_logic_vector(4 downto 0);
     RS2D          : in  std_logic_vector(4 downto 0);
     RDD           : in  std_logic_vector(4 downto 0);
-    Funct3_D      : in  std_logic_vector(2 downto 0);
-    ASel_D        : in  std_logic_vector(1 downto 0);
+    INST_D      : in std_logic_vector(31 downto 0);
+
+    -- NEW control (D)
+    Funct3_D      : in  std_logic_vector(2 downto 0);  -- for branch compares
+    ASel_D        : in  std_logic_vector(1 downto 0);  -- 00=RS1,01=PC,10=ZERO
+
     -- Control (D)
     Halt_D        : in  std_logic;
     LdUnsigned_D  : in  std_logic;
@@ -363,6 +372,8 @@ component ID_EX_reg is
     RegWr_D       : in  std_logic;
     ALUSrcSel_D   : in  std_logic;
     AluCtrl_D     : in  std_logic_vector(3 downto 0);
+    PCSrc_D       : in pc_src_t;
+
     -- Data to E
     PCE           : out std_logic_vector(DATA_WIDTH-1 downto 0);
     PCPLUS4E      : out std_logic_vector(DATA_WIDTH-1 downto 0);
@@ -372,8 +383,12 @@ component ID_EX_reg is
     RS1E          : out std_logic_vector(4 downto 0);
     RS2E          : out std_logic_vector(4 downto 0);
     RDE           : out std_logic_vector(4 downto 0);
+    PCSrc_E       : out pc_src_t;
+
+    -- NEW control (E)
     Funct3_E      : out std_logic_vector(2 downto 0);
     ASel_E        : out std_logic_vector(1 downto 0);
+
     -- Control to E
     Halt_E        : out std_logic;
     LdUnsigned_E  : out std_logic;
@@ -386,6 +401,8 @@ component ID_EX_reg is
     ImmKind_E     : out std_logic_vector(2 downto 0);
     RegWr_E       : out std_logic;
     ALUSrcSel_E   : out std_logic;
+    EX_INST       : out std_logic_vector(31 downto 0);
+    INST_E        : out std_logic_vector(31 downto 0);
     AluCtrl_E     : out std_logic_vector(3 downto 0)
   );
 end component;
@@ -480,21 +497,21 @@ begin
   -- IF STAGE: PC FETCH UNIT
   -- ============================================================
   PCU: PCFetch
-    generic map(G_RESET_VECTOR => x"00400000")
-    port map(
-      i_clk       => iCLK,
-      i_rst       => iRST,
-      i_halt      => s_Halt,
-      i_pc_src    => PCSrc,
-      i_br_taken  => s_BranchTaken,
-      i_rs1_val   => s_rs1_val,
-      i_immI      => s_immI,
-      i_immB      => s_immB,
-      i_immJ      => s_immJ,
-      o_pc        => s_PC,
-      o_pc_plus4  => s_PCPlus4,
-      o_imem_addr => s_NextInstAddr
-    );
+  generic map(G_RESET_VECTOR => x"00400000")
+  port map(
+    i_clk       => iCLK,
+    i_rst       => iRST,
+    i_halt      => s_Halt_W,
+    i_pc_src    => PCSrc,
+    i_br_taken  => s_BranchTaken,
+    i_rs1_val   => s_rs1_val,     -- Use EX stage RS1 for JALR
+    i_immI      => s_immI,     -- Use EX stage immediate
+    i_immB      => s_immI,     -- Use EX stage immediate
+    i_immJ      => s_immI,     -- Use EX stage immediate
+    o_pc        => s_PC,
+    o_pc_plus4  => s_PCPlus4,
+    o_imem_addr => s_NextInstAddr
+  );
 
   -- IF/ID PIPELINE REGISTER
   IF_ID: IF_ID_Reg
@@ -521,13 +538,7 @@ begin
   s_rs2    <= s_IF_ID_Inst(24 downto 20);
   s_funct7 <= s_IF_ID_Inst(31 downto 25);
 
-  -- Destination register (rd) for regfile writeback
-  s_RegWrAddr <= s_rd;
 
-  -- Shift amount calculation
-  s_ALUShiftAmt <= s_rs2_val(4 downto 0) when (s_opcode = "0110011" and (s_funct3 = "001" or s_funct3 = "101")) else
-                   s_IF_ID_Inst(24 downto 20) when (s_opcode = "0010011" and (s_funct3 = "001" or s_funct3 = "101")) else
-                   (others => '0');
 
   -- ID STAGE: CONTROL UNIT
   U_CTRL: ControlUnit
@@ -543,7 +554,7 @@ begin
       MemWrite   => s_MemWrite,
       RegWrite   => s_RegWr,
       ALU_op     => s_ALUCtrl,
-      Halt       => s_Halt,
+      Halt       => s_IF_ID_Halt,
       MemRead    => s_MemRead,
       LdByte     => s_LdByte,
       LdHalf     => s_LdHalf,
@@ -554,25 +565,11 @@ begin
     );
 
   -- ID STAGE: IMMEDIATE GENERATORS
-  IMM_I: imm_generator
+  IMM: imm_generator
     port map(
       i_instr => s_IF_ID_Inst,
       i_kind  => s_ImmKind,
       o_imm   => s_immI
-    );
-
-  IMM_B: imm_generator
-    port map(
-      i_instr => s_IF_ID_Inst,
-      i_kind  => s_ImmKind,
-      o_imm   => s_immB
-    );
-
-  IMM_J: imm_generator
-    port map(
-      i_instr => s_IF_ID_Inst,
-      i_kind  => s_ImmKind,
-      o_imm   => s_immJ
     );
 
   -- ID STAGE: REGISTER FILE
@@ -582,12 +579,22 @@ begin
       RS2     => s_rs2,
       DATA_IN => s_RegWrData,
       W_SEL   => s_RegWrAddr,
-      WE      => s_RegWr,
+      WE      => s_RegWr_W,
       RST     => iRST,
       CLK     => iCLK,
       RS1_OUT => s_rs1_val,
       RS2_OUT => s_rs2_val
     );
+
+    BRANCH_UNIT: branch_logic
+  port map(
+    i_rs1      => s_rs1_val,      -- Use EX stage register values
+    i_rs2      => s_rs2_val,      -- Use EX stage register values
+    i_funct3   => s_funct3,   -- Use EX stage funct3
+    i_branch   => s_Branch,   -- Use EX stage branch control
+    o_br_taken => s_BranchTaken
+  );
+
 
  ID_EX_Pipe: ID_EX_Reg
   port map( 
@@ -595,7 +602,6 @@ begin
     CLK           => iCLK,
     RST           => iRST,
     EN            => '1',  -- Always enabled (no stalls in basic design)
-    
     -- Data Path Inputs from ID Stage (D)
     PCD           => s_IF_ID_PC,
     PCPLUS4D      => s_IF_ID_PCPlus4,
@@ -607,9 +613,11 @@ begin
     RDD           => s_rd,           -- RD address
     Funct3_D      => s_funct3,
     ASel_D        => s_ASel,
+    INST_D        => s_IF_ID_Inst,
+    PCSrc_D       => PCSrc,
     
     -- Control Signals from ID Stage (D)
-    Halt_D        => s_Halt,
+    Halt_D        => s_IF_ID_Halt,
     LdUnsigned_D  => s_LdUnsigned,
     LdHalf_D      => s_LdHalf,
     LdByte_D      => s_LdByte,
@@ -633,6 +641,7 @@ begin
     RDE           => s_ID_EX_RD,
     Funct3_E      => s_ID_EX_Funct3,
     ASel_E        => s_ID_EX_ASel,
+    PcSrc_E       => s_ID_EX_PCSrc,
     
     -- Control Outputs to EX Stage (E)
     Halt_E        => s_ID_EX_Halt,
@@ -646,26 +655,30 @@ begin
     ImmKind_E     => s_ID_EX_ImmKind,
     RegWr_E       => s_ID_EX_RegWr,
     ALUSrcSel_E   => s_ID_EX_ALUSrcSel,
+    INST_E        => s_ID_EX_INST,
     AluCtrl_E     => s_ID_EX_ALUCtrl
   );
 
-
+  -- Shift amount calculation
+  s_ALUShiftAmt <= s_ID_EX_RD2(4 downto 0) when (s_ID_EX_INST(6 downto 0) = "0110011" and (s_ID_EX_Funct3 = "001" or s_ID_EX_Funct3 = "101")) else
+                   s_ID_EX_INST(24 downto 20) when (s_ID_EX_INST(6 downto 0) = "0010011" and (s_ID_EX_Funct3 = "001" or s_ID_EX_Funct3 = "101")) else
+                   (others => '0');
 
   -- EX STAGE: ALU INPUT SELECTION
   -- ALU Input A Mux (for AUIPC, LUI, normal ops)
-  with s_ASel select
-    s_ALUInA <= s_rs1_val       when "00",  -- Normal: RS1
-                s_IF_ID_PC      when "01",  -- AUIPC: use pipelined PC
+  with s_ID_EX_ASel select
+    s_ALUInA <= s_ID_EX_RD1      when "00",  -- Normal: RS1
+                s_ID_EX_PC      when "01",  -- AUIPC: use pipelined PC
                 (others => '0') when "10",  -- LUI: zero
-                s_rs1_val       when others;
+                s_ID_EX_RD1       when others;
 
   -- ALU Input B Mux (RS2 or Immediate)
   ALU_B_MUX: mux2t1_N
     generic map(N => 32)
     port map(
-      i_S  => s_ALUSrcSel,
-      i_D0 => s_rs2_val,
-      i_D1 => s_immI,
+      i_S  => s_ID_EX_ALUSrcSel,
+      i_D0 => s_ID_EX_RD2,
+      i_D1 => s_ID_EX_IMM,
       o_O  => s_ALUInB
     );
 
@@ -675,26 +688,15 @@ begin
       A         => s_ALUInA,
       B         => s_ALUInB,
       shift_amt => s_ALUShiftAmt,
-      ALU_op    => s_ALUCtrl,
+      ALU_op    => s_ID_EX_ALUCtrl,
       F         => s_ALURes,
       Zero      => s_ALUZero,
       Overflow  => s_Ovfl
     );
-
+   oALUOut <= s_ALURes;
   -- Connect ALU output to required output port
-  oALUOut <= s_ALURes;
   s_Ovfl <= s_ALUOvfl;
- 
 
-  -- EX STAGE: BRANCH LOGIC
-  BRANCH_UNIT: branch_logic
-    port map(
-      i_rs1      => s_rs1_val,
-      i_rs2      => s_rs2_val,
-      i_funct3   => s_funct3,
-      i_branch   => s_Branch,
-      o_br_taken => s_BranchTaken
-    );
 
 EX_MEM_Pipe: EX_MEM_reg
   port map(
@@ -740,13 +742,13 @@ EX_MEM_Pipe: EX_MEM_reg
   -- MEM STAGE: LOAD/STORE UNIT
   LSU: load_store_unit
     port map(
-      i_addr        => s_ALURes,
-      i_rs2_wdata   => s_rs2_val,
-      i_mem_read    => s_MemRead,
-      i_mem_write   => s_MemWrite,
-      i_ld_byte     => s_LdByte,
-      i_ld_half     => s_LdHalf,
-      i_ld_unsigned => s_LdUnsigned,
+      i_addr        => s_EX_MEM_ALURes,
+      i_rs2_wdata   => s_EX_MEM_WriteData,
+      i_mem_read    => s_EX_MEM_MemRead,
+      i_mem_write   => s_EX_MEM_MemWrite,
+      i_ld_byte     => s_EX_MEM_LdByte,
+      i_ld_half     => s_EX_MEM_LdHalf,
+      i_ld_unsigned => s_EX_MEM_LdUnsigned,
       i_mem_rdata   => s_DMemOut,
       o_mem_addr    => s_DMemAddr,
       o_mem_wdata   => s_DMemData,
@@ -763,7 +765,7 @@ EX_MEM_Pipe: EX_MEM_reg
       i_Halt => s_EX_MEM_Halt,
       PCPLUS4M => s_EX_MEM_PCPlus4,
       ALUResM => s_EX_MEM_ALURes,
-      LoadDataM => s_EX_MEM_WriteData,
+      LoadDataM => s_LoadedData, --THIS MIGHT NEED TO BE different
       RDM => s_EX_MEM_RD,
       RegWr_M => s_EX_MEM_RegWr,
       WBSel_M => s_EX_MEM_WBSel,
@@ -782,15 +784,15 @@ EX_MEM_Pipe: EX_MEM_reg
   WB_MUX: mux4t1_N
     generic map(N => 32)
     port map(
-      i_S  => s_WBSel,
-      i_D0 => s_ALURes,      -- 00: ALU result
-      i_D1 => s_LoadedData,  -- 01: Load data from memory
-      i_D2 => s_IF_ID_PCPlus4, -- 10: PC+4 (for JAL/JALR)
+      i_S  => s_WBSel_W,
+      i_D0 => s_ALURes_W,      -- 00: ALU result
+      i_D1 => s_LoadData_W,  -- 01: Load data from memory
+      i_D2 => s_PCPLUS4_W, -- 10: PC+4 (for JAL/JALR)
       i_D3 => (others => '0'), -- 11: unused
       o_O  => s_RegWrData
     );
-
-
-
+  
+  s_RegWrAddr <= s_RD_W;
+  s_Halt <= s_Halt_W;
 
 end structure;

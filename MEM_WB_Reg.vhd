@@ -1,6 +1,5 @@
 -- Dylan Kramer and Michael Berg
--- MEM/WB Pipeline Register (M → W) with D/E/M/W naming convention
-
+--MEM/WB reg
 library IEEE;
 use IEEE.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -53,6 +52,8 @@ architecture structural of MEM_WB_reg is
   signal WBSel_M_in, WBSel_W_q    : std_logic_vector(1 downto 0);
 
   signal RegWr_W_q_v : std_logic_vector(0 downto 0);
+  signal HaltM_in    : std_logic;
+  signal HaltW_out   : std_logic_vector(0 downto 0);
 
 begin
   -- Stall selection
@@ -92,5 +93,20 @@ begin
     generic map(N => 2)
     port map(Data_in => WBSel_M_in, CLK => i_CLK, WE => '1', RST => i_RST, Data_out => WBSel_W_q);
   WBSel_W <= WBSel_W_q;
+
+  HaltM_in <= HaltW_out(0) when (i_EN = '0') else i_Halt;
+    HALT_REG : N_reg
+    generic map(N => 1)
+    port map(
+      Data_in(0) => HaltM_in,
+      CLK        => i_CLK,
+      WE         => '1',
+      RST        => i_RST,
+      Data_out   => HaltW_out
+    );
+
+  o_Halt <= HaltW_out(0);
+
+
 
 end structural;
